@@ -1,0 +1,10 @@
+**/bin
+**/obj
+**/node_modules
+**/.git
+**/.vscode
+**/tests
+README.md
+.github/
+appsettings.json
+appsettings.*.json

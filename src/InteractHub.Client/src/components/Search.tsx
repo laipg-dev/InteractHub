@@ -3,10 +3,9 @@
  * Thanh tìm kiếm với dropdown gợi ý nhanh cho InteractHub.
  */
 
-import React, { useState, useEffect, useCallback, useRef, memo } from "react";
+import React, { useState, useEffect, useRef, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search as SearchIcon } from "lucide-react";
-import _ from "lodash";
 import api from "../api/axiosConfig";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -238,16 +237,22 @@ const Search: React.FC<SearchProps> = ({ embedded = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const fetchSuggestions = useCallback(
-    _.debounce(async (q: string) => {
-      if (!q.trim()) {
-        setSuggestions(null);
-        setIsOpen(false);
-        return;
-      }
+  useEffect(() => {
+    const trimmedQuery = query.trim();
+
+    if (!trimmedQuery) {
+      setSuggestions(null);
+      setIsOpen(false);
+      setIsLoading(false);
+      return;
+    }
+
+    const timeout = window.setTimeout(async () => {
       setIsLoading(true);
       try {
-        const res = await api.get(`/posts/search?q=${encodeURIComponent(q)}`);
+        const res = await api.get(
+          `/posts/search?q=${encodeURIComponent(trimmedQuery)}`,
+        );
         setSuggestions(res.data);
         setIsOpen(true);
       } catch (err) {
@@ -255,15 +260,10 @@ const Search: React.FC<SearchProps> = ({ embedded = false }) => {
       } finally {
         setIsLoading(false);
       }
-    }, 300),
-    [],
-  );
+    }, 300);
 
-  useEffect(() => {
-    fetchSuggestions(query);
-    return () => fetchSuggestions.cancel();
-  }, [query, fetchSuggestions]);
-
+    return () => window.clearTimeout(timeout);
+  }, [query]);
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && query.trim()) {
       setIsOpen(false);

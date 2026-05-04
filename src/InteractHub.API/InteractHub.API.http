@@ -1,0 +1,6 @@
+@InteractHub.API_HostAddress = http://localhost:5207
+
+GET {{InteractHub.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

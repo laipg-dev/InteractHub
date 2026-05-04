@@ -1,0 +1,35 @@
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: interacthub_db
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=YourStrong@Password2026
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sql_data:/var/opt/mssql
+
+  # Thêm Adminer
+  adminer:
+    image: adminer
+    container_name: interacthub_adminer
+    restart: always
+    ports:
+      - "8080:8080"
+  api:
+    build:
+      context: .
+      dockerfile: src/InteractHub.API/Dockerfile
+    container_name: interacthub_api
+    ports:
+      - "5207:8080" # Ngoài máy gọi 5207 -> vào container cổng 8080
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080 # Ép .NET chạy cổng 8080 bên trong container
+      - ConnectionStrings__DefaultConnection=Server=db;Database=InteractHub;User Id=sa;Password=YourStrong@Password2026;TrustServerCertificate=True
+    depends_on:
+      - db
+volumes:
+  sql_data:

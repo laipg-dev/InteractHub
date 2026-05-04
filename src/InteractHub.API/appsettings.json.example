@@ -1,0 +1,22 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost,1433;Database=InteractHub;User Id=sa;Password=YourPassword;TrustServerCertificate=True;"
+  },
+  "JwtSettings": {
+    "SecretKey": "YOUR_JWT_SECRET_HERE",
+    "Issuer": "InteractHub",
+    "Audience": "InteractHubUsers",
+    "ExpirationDays": 7
+  },
+
+  "AzureBlob": {
+    "ConnectionString": "YOUR_CONNECTION_STRING_HERE"
+  }
+}

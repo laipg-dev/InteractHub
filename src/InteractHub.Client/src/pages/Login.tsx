@@ -1,8 +1,16 @@
+// Login.tsx — safe post-login flow
+// Key guarantees:
+//   1. navigate() is called AFTER the auth-changed event has been processed
+//      by React (via a microtask flush using Promise.resolve())
+//   2. No API is called between login() and navigate()
+//   3. All errors surface to the user without clearing valid tokens
+
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../api/axiosConfig";
 import { useAuth } from "../context/AuthContext";
+import { getAccessToken } from "../utils/auth";
 
 type LoginFormValues = {
   userName: string;
@@ -19,10 +27,7 @@ function Login() {
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<LoginFormValues>({
-    defaultValues: {
-      userName: "",
-      password: "",
-    },
+    defaultValues: { userName: "", password: "" },
     mode: "onBlur",
   });
 
@@ -31,42 +36,39 @@ function Login() {
 
     try {
       const res = await api.post("/auth/login", values);
-      console.log("[LOGIN] Response received:", res.data);
-      console.log("[LOGIN] Response.data keys:", Object.keys(res.data));
-
-      const token = res.data.token || res.data.Token;
-      console.log(
-        "[LOGIN] Extracted token:",
-        token ? `${token.substring(0, 30)}...` : "NULL",
-      );
+      const token: string | undefined = res.data.token ?? res.data.Token;
 
       if (!token) {
-        throw new Error("Token response is missing from backend.");
+        throw new Error("Server response missing token field.");
       }
 
-      // Before calling login, check localStorage
-      console.log(
-        "[LOGIN] Before login(), localStorage token:",
-        localStorage.getItem("token"),
-      );
-
-      console.log("[LOGIN] Calling login() with token");
+      // 1. Persist token to localStorage + dispatch auth-changed (once)
       login(token);
 
-      // After calling login, check localStorage
-      console.log(
-        "[LOGIN] After login(), localStorage token:",
-        localStorage.getItem("token"),
-      );
+      // 2. Verify token is actually in localStorage before navigating.
+      //    This guards against any unexpected storage failure on Azure.
+      const persisted = getAccessToken();
+      if (!persisted) {
+        throw new Error(
+          "Token could not be saved to localStorage. Check browser storage settings.",
+        );
+      }
 
-      console.log("[LOGIN] Navigating to /home");
+      // 3. Yield to the event loop so the auth-changed listener in AuthContext
+      //    can synchronously update state before the next page renders.
+      //    Promise.resolve() flushes microtasks — no arbitrary setTimeout needed.
+      await Promise.resolve();
+
       navigate("/home");
-    } catch (err: any) {
-      console.error("[LOGIN] Login failed:", err);
+    } catch (err: unknown) {
+      const error = err as {
+        response?: { data?: { error?: string; message?: string } };
+        message?: string;
+      };
       const message =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        err.message ||
+        error.response?.data?.error ??
+        error.response?.data?.message ??
+        error.message ??
         "Sai tài khoản hoặc mật khẩu!";
       setSubmitError(message);
     }

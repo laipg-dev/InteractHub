@@ -1,3 +1,7 @@
+// AuthContext.tsx — race-condition-free auth context
+// Design: setAccessToken() already dispatches auth-changed.
+// login() must NOT call notifyAuthChanged again.
+
 import React, {
   createContext,
   useCallback,
@@ -12,95 +16,70 @@ import {
   getCurrentUserIdFromToken,
   isAdminToken,
   isAuthenticated,
-  notifyAuthChanged,
   setAccessToken,
 } from "../utils/auth";
 
-type AuthContextValue = {
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type AuthState = {
   token: string | null;
   isAuthenticated: boolean;
   currentUserId: string | null;
   isAdmin: boolean;
+};
+
+type AuthContextValue = AuthState & {
   login: (token: string) => void;
   logout: () => void;
-  refreshAuth: () => void;
 };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const readAuthState = (): AuthState => ({
+  token: getAccessToken(),
+  isAuthenticated: isAuthenticated(),
+  currentUserId: getCurrentUserIdFromToken(),
+  isAdmin: isAdminToken(),
+});
+
+// ─── Context ──────────────────────────────────────────────────────────────────
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-const buildAuthState = () => {
-  const token = getAccessToken();
-  const userId = getCurrentUserIdFromToken();
-  console.log(
-    "[AUTH] buildAuthState: token =",
-    token ? token.substring(0, 20) + "..." : null,
-    "currentUserId =",
-    userId,
-  );
-  return {
-    token,
-    isAuthenticated: isAuthenticated(),
-    currentUserId: userId,
-    isAdmin: isAdminToken(),
-  };
-};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [authState, setAuthState] = useState(buildAuthState);
+  const [authState, setAuthState] = useState<AuthState>(readAuthState);
 
-  const refreshAuth = useCallback(() => {
-    console.log("[AUTH] refreshAuth() called");
-    setAuthState(buildAuthState());
+  // Re-sync state whenever auth-changed fires.
+  // setAccessToken and clearAccessToken are the only dispatchers — no double-fire.
+  useEffect(() => {
+    const sync = () => setAuthState(readAuthState());
+    window.addEventListener("auth-changed", sync);
+    return () => window.removeEventListener("auth-changed", sync);
   }, []);
 
-  useEffect(() => {
-    const handleAuthChanged = () => {
-      console.log("[AUTH] auth-changed event received, calling refreshAuth()");
-      refreshAuth();
-    };
-    window.addEventListener("auth-changed", handleAuthChanged);
-    return () => window.removeEventListener("auth-changed", handleAuthChanged);
-  }, [refreshAuth]);
-
   const login = useCallback((token: string) => {
-    console.log(
-      "[AUTH] login() called with token:",
-      token.substring(0, 20) + "...",
-    );
+    // setAccessToken saves to localStorage AND dispatches auth-changed once.
+    // Do NOT call notifyAuthChanged / dispatchEvent here again.
     setAccessToken(token);
-    const saved = getAccessToken();
-    console.log(
-      "[AUTH] token saved to localStorage:",
-      saved ? saved.substring(0, 20) + "..." : null,
-    );
-    notifyAuthChanged();
-    console.log("[AUTH] auth-changed event dispatched");
   }, []);
 
   const logout = useCallback(() => {
+    // Same: clearAccessToken dispatches auth-changed once internally.
     clearAccessToken();
-    notifyAuthChanged();
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({
-      ...authState,
-      login,
-      logout,
-      refreshAuth,
-    }),
-    [authState, login, logout, refreshAuth],
+    () => ({ ...authState, login, logout }),
+    [authState, login, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
-  return context;
+export const useAuth = (): AuthContextValue => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
+  return ctx;
 };

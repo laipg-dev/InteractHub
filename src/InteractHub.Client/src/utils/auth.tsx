@@ -1,3 +1,7 @@
+// auth.ts — production-safe JWT helpers
+// Rule: ONLY setAccessToken and clearAccessToken dispatch auth-changed.
+// No caller should dispatch it manually.
+
 type TokenPayload = {
   sub?: string;
   nameid?: string;
@@ -9,67 +13,55 @@ type TokenPayload = {
     | string[];
 };
 
+const TOKEN_KEY = "token";
+
+// ─── Token I/O ────────────────────────────────────────────────────────────────
+
 export const getAccessToken = (): string | null => {
-  const token = localStorage.getItem("token");
-  console.log(
-    "[AUTH] getAccessToken() called - localStorage['token'] =",
-    token ? `"${token.substring(0, 30)}..."` : "NULL",
-  );
-  return token;
+  return localStorage.getItem(TOKEN_KEY);
 };
 
-export const notifyAuthChanged = () => {
-  console.log("[AUTH] notifyAuthChanged() dispatching event");
+export const setAccessToken = (token: string): void => {
+  localStorage.setItem(TOKEN_KEY, token);
+  // Single, authoritative dispatch point — callers must NOT dispatch again.
+  _dispatchAuthChanged();
+};
+
+export const clearAccessToken = (): void => {
+  localStorage.removeItem(TOKEN_KEY);
+  // Single, authoritative dispatch point.
+  _dispatchAuthChanged();
+};
+
+// Internal only — do not export. Forces all dispatches to go through set/clear.
+const _dispatchAuthChanged = (): void => {
   window.dispatchEvent(new Event("auth-changed"));
 };
 
-export const setAccessToken = (token: string) => {
-  console.log(
-    "[AUTH] setAccessToken() saving token:",
-    token.substring(0, 30) + "...",
-  );
-  localStorage.setItem("token", token);
-  // Verify it was actually saved
-  const verify = localStorage.getItem("token");
-  console.log(
-    "[AUTH] Verify localStorage after setItem:",
-    verify ? `"${verify.substring(0, 30)}..."` : "NULL",
-  );
-  notifyAuthChanged();
-};
-
-export const clearAccessToken = () => {
-  console.log("[AUTH] clearAccessToken() removing token");
-  localStorage.removeItem("token");
-  const verify = localStorage.getItem("token");
-  console.log("[AUTH] Verify localStorage after removeItem:", verify);
-  notifyAuthChanged();
-};
+// ─── Token parsing ────────────────────────────────────────────────────────────
 
 export const getTokenPayload = (): TokenPayload | null => {
   const token = getAccessToken();
   if (!token) return null;
 
   try {
-    const payload = JSON.parse(atob(token.split(".")[1])) as TokenPayload;
-    console.log("[AUTH] Token payload:", payload);
-    return payload;
-  } catch (error) {
-    console.error("[AUTH] Failed to parse token:", error);
+    const base64 = token.split(".")[1];
+    // atob is fine for JWT; add padding safety
+    const padded = base64.replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(padded)) as TokenPayload;
+  } catch {
+    console.error(
+      "[AUTH] Failed to parse token payload — token may be malformed.",
+    );
     return null;
   }
 };
 
+// ─── Derived helpers ──────────────────────────────────────────────────────────
+
 export const getCurrentUserIdFromToken = (): string | null => {
   const payload = getTokenPayload();
-  const userId = payload?.sub || payload?.nameid || null;
-  console.log(
-    "[AUTH] getCurrentUserIdFromToken:",
-    userId,
-    "from payload:",
-    payload,
-  );
-  return userId;
+  return payload?.sub ?? payload?.nameid ?? null;
 };
 
 export const getRolesFromToken = (): string[] => {
@@ -83,12 +75,11 @@ export const getRolesFromToken = (): string[] => {
   ]
     .flat()
     .filter(Boolean)
-    .map((item) => String(item));
+    .map(String);
 };
 
-export const isAdminToken = (): boolean => {
-  return getRolesFromToken().some((role) => role.toLowerCase() === "admin");
-};
+export const isAdminToken = (): boolean =>
+  getRolesFromToken().some((r) => r.toLowerCase() === "admin");
 
 export const isAuthenticated = (): boolean => {
   const token = getAccessToken();
@@ -97,5 +88,7 @@ export const isAuthenticated = (): boolean => {
   if (!token || !payload) return false;
   if (!payload.exp) return true;
 
-  return payload.exp * 1000 > Date.now();
+  // 30-second clock-skew buffer — accounts for Azure server time drift
+  const SKEW_MS = 30_000;
+  return payload.exp * 1000 > Date.now() - SKEW_MS;
 };

@@ -1,5 +1,13 @@
+// axiosConfig.ts — production-grade axios instance
+// Rules:
+//   1. Never clear token or redirect on /auth/login 401
+//   2. Never redirect if already on /login (loop prevention)
+//   3. Only one redirect can be in-flight at a time (flag guard)
+
 import axios from "axios";
 import { clearAccessToken, getAccessToken } from "../utils/auth";
+
+// ─── Base URL ─────────────────────────────────────────────────────────────────
 
 const apiBaseUrl =
   import.meta.env.VITE_API_BASE_URL ||
@@ -7,67 +15,72 @@ const apiBaseUrl =
     ? "http://localhost:5207/api"
     : "/api");
 
-const api = axios.create({
-  baseURL: apiBaseUrl,
-});
+const api = axios.create({ baseURL: apiBaseUrl });
+
+// ─── Flag: prevent concurrent redirect storms ─────────────────────────────────
+
+let isRedirectingToLogin = false;
+
+// ─── Request interceptor ──────────────────────────────────────────────────────
 
 api.interceptors.request.use((config) => {
   const token = getAccessToken();
-  console.log(
-    `[AXIOS] ${config.method?.toUpperCase()} ${config.url}`,
-    token ? `✓ Token: ${token.substring(0, 20)}...` : "⚠️ NO TOKEN",
-  );
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
-  } else {
-    console.warn(`[AXIOS] ⚠️ NO TOKEN for request: ${config.url}`);
   }
   return config;
 });
 
+// ─── Response interceptor ─────────────────────────────────────────────────────
+
 api.interceptors.response.use(
   (response) => response,
+
   (error) => {
-    const errorInfo = {
-      url: error.config?.url,
-      method: error.config?.method,
-      status: error.response?.status,
-      data: error.response?.data,
-      timestamp: new Date().toISOString(),
-    };
+    const status: number | undefined = error.response?.status;
+    const requestUrl: string = error.config?.url ?? "";
 
-    console.error("API error:", errorInfo);
-
-    // Lưu lại log lỗi vào localStorage để debug sau
+    // ── Persist error log for post-mortem debugging ──────────────────────────
     try {
-      const errorLog = JSON.parse(localStorage.getItem("api-errors") || "[]");
-      errorLog.push(errorInfo);
-      // Giữ tối đa 20 lỗi gần nhất
-      localStorage.setItem("api-errors", JSON.stringify(errorLog.slice(-20)));
+      const log = JSON.parse(localStorage.getItem("api-errors") ?? "[]");
+      log.push({
+        url: requestUrl,
+        method: error.config?.method,
+        status,
+        data: error.response?.data,
+        ts: new Date().toISOString(),
+      });
+      localStorage.setItem("api-errors", JSON.stringify(log.slice(-20)));
     } catch {
-      // Bỏ qua nếu không thể lưu
+      // Non-critical — ignore storage errors
     }
 
-    if (error.response?.status === 401) {
-      console.warn(
-        "Received 401 from:",
-        error.config?.url,
-        "- clearing token and redirecting to login.",
-      );
-      // Lưu endpoint bị 401
-      try {
-        localStorage.setItem(
-          "last-401-endpoint",
-          error.config?.url || "unknown",
-        );
-      } catch {
-        // Bỏ qua
+    // ── 401 handling ─────────────────────────────────────────────────────────
+    if (status === 401) {
+      const isAuthEndpoint =
+        requestUrl.includes("/auth/login") ||
+        requestUrl.includes("/auth/refresh");
+
+      if (isAuthEndpoint) {
+        // Let the Login component handle this — do NOT clear the token
+        // (there may not even be one yet) and do NOT redirect.
+        return Promise.reject(error);
       }
-      clearAccessToken();
-      if (window.location.pathname !== "/login") {
-        window.location.href = "/login";
+
+      // Guard: only one redirect in-flight
+      if (!isRedirectingToLogin && window.location.pathname !== "/login") {
+        isRedirectingToLogin = true;
+        clearAccessToken();
+
+        // Small tick to let any pending state updates flush before redirect
+        setTimeout(() => {
+          window.location.href = "/login";
+          // Reset flag after navigation (in case it's SPA navigation)
+          isRedirectingToLogin = false;
+        }, 50);
       }
     }
+
     return Promise.reject(error);
   },
 );

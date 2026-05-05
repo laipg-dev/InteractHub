@@ -1,21 +1,50 @@
-// Login.tsx — safe post-login flow
-// Key guarantees:
-//   1. navigate() is called AFTER the auth-changed event has been processed
-//      by React (via a microtask flush using Promise.resolve())
-//   2. No API is called between login() and navigate()
-//   3. All errors surface to the user without clearing valid tokens
-
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../api/axiosConfig";
 import { useAuth } from "../context/AuthContext";
-import { getAccessToken } from "../utils/auth";
 
 type LoginFormValues = {
   userName: string;
   password: string;
 };
+
+// ─── Debug helper ─────────────────────────────────────────────────────────────
+// Lưu snapshot vào sessionStorage — tồn tại qua reload, không bị xóa bởi
+// clearAccessToken() vì dùng key khác và khác storage.
+// Sau khi bị redirect về login, mở DevTools > Console rồi chạy:
+//   JSON.parse(sessionStorage.getItem('__debug_login'))
+// để xem toàn bộ timeline.
+const saveDebugSnapshot = (
+  label: string,
+  extra: Record<string, unknown> = {},
+) => {
+  const token = localStorage.getItem("token");
+  const entry = {
+    label,
+    time: new Date().toISOString(),
+    tokenExists: token !== null,
+    tokenLength: token?.length ?? 0,
+    tokenPreview: token ? token.substring(0, 50) + "..." : "NULL",
+    tokenIsValidJwtFormat:
+      /^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$/.test(token ?? ""),
+    ...extra,
+  };
+
+  // Append vào mảng để giữ toàn bộ timeline
+  try {
+    const existing = JSON.parse(
+      sessionStorage.getItem("__debug_login") ?? "[]",
+    );
+    existing.push(entry);
+    sessionStorage.setItem("__debug_login", JSON.stringify(existing));
+  } catch {
+    // sessionStorage có thể bị block trong một số môi trường
+  }
+
+  console.log(`[LOGIN DEBUG] ${label}`, entry);
+};
+// ─────────────────────────────────────────────────────────────────────────────
 
 function Login() {
   const navigate = useNavigate();
@@ -27,48 +56,65 @@ function Login() {
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<LoginFormValues>({
-    defaultValues: { userName: "", password: "" },
+    defaultValues: {
+      userName: "",
+      password: "",
+    },
     mode: "onBlur",
   });
 
   const onSubmit = async (values: LoginFormValues) => {
     setSubmitError("");
 
+    // Reset debug log cho lần login mới
+    sessionStorage.setItem("__debug_login", "[]");
+
     try {
+      saveDebugSnapshot("1_before_api_call");
+
       const res = await api.post("/auth/login", values);
-      const token: string | undefined = res.data.token ?? res.data.Token;
+      console.log("[LOGIN] Response received:", res.data);
+
+      const token = res.data.token || res.data.Token;
+
+      saveDebugSnapshot("2_after_api_response", {
+        responseKeys: Object.keys(res.data),
+        tokenFromResponse: token ? token.substring(0, 50) + "..." : "NULL",
+        tokenFieldFound: !!token,
+      });
 
       if (!token) {
-        throw new Error("Server response missing token field.");
+        throw new Error("Token response is missing from backend.");
       }
 
-      // 1. Persist token to localStorage + dispatch auth-changed (once)
+      // CHECKPOINT 1: trước khi gọi login()
+      saveDebugSnapshot("3_before_login_call");
+
       login(token);
 
-      // 2. Verify token is actually in localStorage before navigating.
-      //    This guards against any unexpected storage failure on Azure.
-      const persisted = getAccessToken();
-      if (!persisted) {
-        throw new Error(
-          "Token could not be saved to localStorage. Check browser storage settings.",
-        );
-      }
+      // CHECKPOINT 2: ngay sau login() — đây là thời điểm quan trọng nhất
+      // Nếu token NULL ở đây → setAccessToken bị lỗi
+      saveDebugSnapshot("4_immediately_after_login_call");
 
-      // 3. Yield to the event loop so the auth-changed listener in AuthContext
-      //    can synchronously update state before the next page renders.
-      //    Promise.resolve() flushes microtasks — no arbitrary setTimeout needed.
+      // CHECKPOINT 3: sau 1 tick (để event listener kịp chạy)
       await Promise.resolve();
+      saveDebugSnapshot("5_after_microtask_flush");
 
+      // CHECKPOINT 4: navigate
+      console.log("[LOGIN] Navigating to /home — nếu bị redirect về login,");
+      console.log("  mở DevTools > Console > chạy lệnh:");
+      console.log("  JSON.parse(sessionStorage.getItem('__debug_login'))");
       navigate("/home");
-    } catch (err: unknown) {
-      const error = err as {
-        response?: { data?: { error?: string; message?: string } };
-        message?: string;
-      };
+    } catch (err: any) {
+      console.error("[LOGIN] Login failed:", err);
+      saveDebugSnapshot("ERROR", {
+        errorMessage: err.message,
+        status: err.response?.status,
+      });
       const message =
-        error.response?.data?.error ??
-        error.response?.data?.message ??
-        error.message ??
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        err.message ||
         "Sai tài khoản hoặc mật khẩu!";
       setSubmitError(message);
     }

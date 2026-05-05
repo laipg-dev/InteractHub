@@ -9,7 +9,7 @@ public static class JwtExtensions
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration config)
 {
     // Lấy thông tin từ config
-    var secretKey = config["JwtSettings:SecretKey"];
+    var secretKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["JwtSettings:SecretKey"]));
     var issuer = config["JwtSettings:Issuer"];
     var audience = config["JwtSettings:Audience"];
 
@@ -32,7 +32,7 @@ public static class JwtExtensions
             ValidateIssuerSigningKey = true,
             ValidIssuer = issuer,
             ValidAudience = audience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey!)),
+            IssuerSigningKey = secretKey,
             ClockSkew = TimeSpan.Zero // Quan trọng để fix lỗi lệch giờ Docker
         };
         options.Events = new JwtBearerEvents

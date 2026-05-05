@@ -54,3 +54,9 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+appsettings.Development.json
+.env
+appsettings.Development.*.json
+appsettings.*.json
+appsettings.json
+

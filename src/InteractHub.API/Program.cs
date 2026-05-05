@@ -30,6 +30,7 @@ builder.Services.AddDatabase(builder.Configuration);
 builder.Services.AddIdentityServices();
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
+builder.Services.AddHealthChecks();
 builder.Services.AddControllers()
     .ConfigureCustomApiBehavior()
     .AddJsonOptions(options =>
@@ -71,6 +72,7 @@ app.UseCors("AllowReact");
 
 //app.UseHttpsRedirection();
 app.UseAuthentication();
+app.MapHealthChecks("/health");
 app.UseAuthorization();
 app.MapControllers();
 app.MapHub<AppRealtimeHub>("/hubs/realtime");

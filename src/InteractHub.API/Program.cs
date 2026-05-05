@@ -18,7 +18,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReact",
-        policy => policy.WithOrigins("http://localhost:5173", "http://localhost:3000") // Cho phép cả 2 cổng
+        policy => policy.WithOrigins("https://salmon-rock-09af1e00.7.azurestaticapps.net","http://localhost:5173", "http://localhost:3000") // Cho phép cả 2 cổng
                         .AllowAnyMethod()
                         .AllowAnyHeader());
 });

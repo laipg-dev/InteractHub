@@ -22,15 +22,41 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error("API error:", {
+    const errorInfo = {
       url: error.config?.url,
       method: error.config?.method,
       status: error.response?.status,
       data: error.response?.data,
-    });
+      timestamp: new Date().toISOString(),
+    };
+
+    console.error("API error:", errorInfo);
+
+    // Lưu lại log lỗi vào localStorage để debug sau
+    try {
+      const errorLog = JSON.parse(localStorage.getItem("api-errors") || "[]");
+      errorLog.push(errorInfo);
+      // Giữ tối đa 20 lỗi gần nhất
+      localStorage.setItem("api-errors", JSON.stringify(errorLog.slice(-20)));
+    } catch {
+      // Bỏ qua nếu không thể lưu
+    }
 
     if (error.response?.status === 401) {
-      console.warn("Received 401, clearing token and redirecting to login.");
+      console.warn(
+        "Received 401 from:",
+        error.config?.url,
+        "- clearing token and redirecting to login.",
+      );
+      // Lưu endpoint bị 401
+      try {
+        localStorage.setItem(
+          "last-401-endpoint",
+          error.config?.url || "unknown",
+        );
+      } catch {
+        // Bỏ qua
+      }
       clearAccessToken();
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";

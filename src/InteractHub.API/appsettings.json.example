@@ -7,14 +7,15 @@
   },
   "AllowedHosts": "*",
   "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost,1433;Database=InteractHub;User Id=sa;Password=YourPassword;TrustServerCertificate=True;"
+    "DefaultConnection": "YOUR_AZURE_SQL_CONNECTION_STRING"
   },
   "JwtSettings": {
-    "SecretKey": "YOUR_JWT_SECRET_HERE",
+    "SecretKey": "<FromEnvironment>",
     "Issuer": "InteractHub",
     "Audience": "InteractHubUsers",
     "ExpirationDays": 7
-  },
+  }
+
 
   "AzureBlob": {
     "ConnectionString": "YOUR_CONNECTION_STRING_HERE"

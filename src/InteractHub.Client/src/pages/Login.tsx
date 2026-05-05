@@ -31,13 +31,34 @@ function Login() {
 
     try {
       const res = await api.post("/auth/login", values);
-      console.log("[LOGIN] Response:", res.data);
+      console.log("[LOGIN] Response received:", res.data);
+      console.log("[LOGIN] Response.data keys:", Object.keys(res.data));
+
       const token = res.data.token || res.data.Token;
+      console.log(
+        "[LOGIN] Extracted token:",
+        token ? `${token.substring(0, 30)}...` : "NULL",
+      );
+
       if (!token) {
         throw new Error("Token response is missing from backend.");
       }
+
+      // Before calling login, check localStorage
+      console.log(
+        "[LOGIN] Before login(), localStorage token:",
+        localStorage.getItem("token"),
+      );
+
       console.log("[LOGIN] Calling login() with token");
       login(token);
+
+      // After calling login, check localStorage
+      console.log(
+        "[LOGIN] After login(), localStorage token:",
+        localStorage.getItem("token"),
+      );
+
       console.log("[LOGIN] Navigating to /home");
       navigate("/home");
     } catch (err: any) {

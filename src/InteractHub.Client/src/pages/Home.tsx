@@ -144,22 +144,25 @@ const Home = () => {
   };
 
   useEffect(() => {
-    if (!currentUserId) {
-      console.log("[HOME] Waiting for currentUserId...");
-      return;
-    }
-    console.log("[HOME] currentUserId available, fetching initial data");
+    console.log(
+      "[HOME] useEffect for initial data, currentUserId:",
+      currentUserId,
+    );
+
+    // Don't wait for currentUserId to be available - just try to fetch
+    // The token should be in localStorage already from login
     void fetchInitialData();
-  }, [currentUserId]);
+  }, []);
 
   useEffect(() => {
-    if (!currentUserId) {
-      console.log("[HOME] Waiting for currentUserId before sidebar...");
-      return;
-    }
-    console.log("[HOME] currentUserId available, fetching sidebar data");
+    console.log(
+      "[HOME] useEffect for sidebar data, currentUserId:",
+      currentUserId,
+    );
+
+    // Similarly, don't wait for currentUserId
     void fetchSidebarData();
-  }, [currentUserId]);
+  }, []);
 
   useEffect(() => {
     let unsubscribeInteraction: (() => void) | undefined;

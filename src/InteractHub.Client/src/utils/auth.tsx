@@ -10,20 +10,39 @@ type TokenPayload = {
 };
 
 export const getAccessToken = (): string | null => {
-  return localStorage.getItem("token");
+  const token = localStorage.getItem("token");
+  console.log(
+    "[AUTH] getAccessToken() called - localStorage['token'] =",
+    token ? `"${token.substring(0, 30)}..."` : "NULL",
+  );
+  return token;
 };
 
 export const notifyAuthChanged = () => {
+  console.log("[AUTH] notifyAuthChanged() dispatching event");
   window.dispatchEvent(new Event("auth-changed"));
 };
 
 export const setAccessToken = (token: string) => {
+  console.log(
+    "[AUTH] setAccessToken() saving token:",
+    token.substring(0, 30) + "...",
+  );
   localStorage.setItem("token", token);
+  // Verify it was actually saved
+  const verify = localStorage.getItem("token");
+  console.log(
+    "[AUTH] Verify localStorage after setItem:",
+    verify ? `"${verify.substring(0, 30)}..."` : "NULL",
+  );
   notifyAuthChanged();
 };
 
 export const clearAccessToken = () => {
+  console.log("[AUTH] clearAccessToken() removing token");
   localStorage.removeItem("token");
+  const verify = localStorage.getItem("token");
+  console.log("[AUTH] Verify localStorage after removeItem:", verify);
   notifyAuthChanged();
 };
 

@@ -69,7 +69,8 @@ app.UseCors("AllowReact");
     c.RoutePrefix = "swagger"; // Để vào thẳng bằng http://localhost:5001 mà không cần gõ /swagger
 });
 
-
+app.UseCors("AllowFrontend");
+app.MapControllers();
 //app.UseHttpsRedirection();
 app.UseAuthentication();
 app.MapHealthChecks("/health");

@@ -54,7 +54,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [refreshAuth]);
 
   const login = useCallback((token: string) => {
+    console.log("Login called with token:", token);
     setAccessToken(token);
+    console.log("Token saved to localStorage:", getAccessToken());
     notifyAuthChanged();
   }, []);
 

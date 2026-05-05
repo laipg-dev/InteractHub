@@ -31,12 +31,19 @@ function Login() {
 
     try {
       const res = await api.post("/auth/login", values);
-      login(res.data.token);
+      console.log("Login response:", res.data);
+      const token = res.data.token || res.data.Token;
+      if (!token) {
+        throw new Error("Token response is missing from backend.");
+      }
+      login(token);
       navigate("/home");
     } catch (err: any) {
+      console.error("Login failed:", err);
       const message =
         err.response?.data?.error ||
         err.response?.data?.message ||
+        err.message ||
         "Sai tài khoản hoặc mật khẩu!";
       setSubmitError(message);
     }

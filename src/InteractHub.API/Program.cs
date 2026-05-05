@@ -70,7 +70,6 @@ app.UseCors("AllowReact");
 });
 
 app.UseCors("AllowFrontend");
-app.MapControllers();
 //app.UseHttpsRedirection();
 app.UseAuthentication();
 app.MapHealthChecks("/health");

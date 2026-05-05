@@ -60,15 +60,14 @@ using (var scope = app.Services.CreateScope())
 
 app.UseMiddleware<ExceptionMiddleware>();
 app.UseCors("AllowReact");
-if (app.Environment.IsDevelopment())
-{
+
     app.UseSwagger();
     app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "InteractHub API V1");
     c.RoutePrefix = "swagger"; // Để vào thẳng bằng http://localhost:5001 mà không cần gõ /swagger
 });
-}
+
 
 //app.UseHttpsRedirection();
 app.UseAuthentication();

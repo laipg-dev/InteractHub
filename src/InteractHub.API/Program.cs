@@ -75,5 +75,6 @@ app.UseAuthentication();
 app.MapHealthChecks("/health");
 app.UseAuthorization();
 app.MapControllers();
+app.MapGet("/", () => "Backend is running!");
 app.MapHub<AppRealtimeHub>("/hubs/realtime");
 app.Run();

@@ -131,6 +131,10 @@ const Home = () => {
 
   const fetchInitialData = async () => {
     try {
+      console.log(
+        "[HOME] Fetching initial data, currentUserId:",
+        currentUserId,
+      );
       await Promise.all([fetchPosts(), fetchStories()]);
     } catch {
       console.error("Lỗi tải dữ liệu");
@@ -140,12 +144,22 @@ const Home = () => {
   };
 
   useEffect(() => {
+    if (!currentUserId) {
+      console.log("[HOME] Waiting for currentUserId...");
+      return;
+    }
+    console.log("[HOME] currentUserId available, fetching initial data");
     void fetchInitialData();
-  }, []);
+  }, [currentUserId]);
 
   useEffect(() => {
+    if (!currentUserId) {
+      console.log("[HOME] Waiting for currentUserId before sidebar...");
+      return;
+    }
+    console.log("[HOME] currentUserId available, fetching sidebar data");
     void fetchSidebarData();
-  }, []);
+  }, [currentUserId]);
 
   useEffect(() => {
     let unsubscribeInteraction: (() => void) | undefined;

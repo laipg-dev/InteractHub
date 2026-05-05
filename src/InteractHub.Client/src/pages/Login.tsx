@@ -31,15 +31,17 @@ function Login() {
 
     try {
       const res = await api.post("/auth/login", values);
-      console.log("Login response:", res.data);
+      console.log("[LOGIN] Response:", res.data);
       const token = res.data.token || res.data.Token;
       if (!token) {
         throw new Error("Token response is missing from backend.");
       }
+      console.log("[LOGIN] Calling login() with token");
       login(token);
+      console.log("[LOGIN] Navigating to /home");
       navigate("/home");
     } catch (err: any) {
-      console.error("Login failed:", err);
+      console.error("[LOGIN] Login failed:", err);
       const message =
         err.response?.data?.error ||
         err.response?.data?.message ||

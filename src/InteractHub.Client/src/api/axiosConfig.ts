@@ -13,8 +13,14 @@ const api = axios.create({
 
 api.interceptors.request.use((config) => {
   const token = getAccessToken();
+  console.log(
+    `[AXIOS] ${config.method?.toUpperCase()} ${config.url}`,
+    token ? `✓ Token: ${token.substring(0, 20)}...` : "⚠️ NO TOKEN",
+  );
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  } else {
+    console.warn(`[AXIOS] ⚠️ NO TOKEN for request: ${config.url}`);
   }
   return config;
 });

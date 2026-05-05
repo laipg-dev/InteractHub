@@ -30,10 +30,17 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const buildAuthState = () => {
   const token = getAccessToken();
+  const userId = getCurrentUserIdFromToken();
+  console.log(
+    "[AUTH] buildAuthState: token =",
+    token ? token.substring(0, 20) + "..." : null,
+    "currentUserId =",
+    userId,
+  );
   return {
     token,
     isAuthenticated: isAuthenticated(),
-    currentUserId: getCurrentUserIdFromToken(),
+    currentUserId: userId,
     isAdmin: isAdminToken(),
   };
 };
@@ -44,20 +51,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [authState, setAuthState] = useState(buildAuthState);
 
   const refreshAuth = useCallback(() => {
+    console.log("[AUTH] refreshAuth() called");
     setAuthState(buildAuthState());
   }, []);
 
   useEffect(() => {
-    const handleAuthChanged = () => refreshAuth();
+    const handleAuthChanged = () => {
+      console.log("[AUTH] auth-changed event received, calling refreshAuth()");
+      refreshAuth();
+    };
     window.addEventListener("auth-changed", handleAuthChanged);
     return () => window.removeEventListener("auth-changed", handleAuthChanged);
   }, [refreshAuth]);
 
   const login = useCallback((token: string) => {
-    console.log("Login called with token:", token);
+    console.log(
+      "[AUTH] login() called with token:",
+      token.substring(0, 20) + "...",
+    );
     setAccessToken(token);
-    console.log("Token saved to localStorage:", getAccessToken());
+    const saved = getAccessToken();
+    console.log(
+      "[AUTH] token saved to localStorage:",
+      saved ? saved.substring(0, 20) + "..." : null,
+    );
     notifyAuthChanged();
+    console.log("[AUTH] auth-changed event dispatched");
   }, []);
 
   const logout = useCallback(() => {

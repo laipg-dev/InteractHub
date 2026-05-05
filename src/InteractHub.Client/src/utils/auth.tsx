@@ -32,15 +32,25 @@ export const getTokenPayload = (): TokenPayload | null => {
   if (!token) return null;
 
   try {
-    return JSON.parse(atob(token.split(".")[1])) as TokenPayload;
-  } catch {
+    const payload = JSON.parse(atob(token.split(".")[1])) as TokenPayload;
+    console.log("[AUTH] Token payload:", payload);
+    return payload;
+  } catch (error) {
+    console.error("[AUTH] Failed to parse token:", error);
     return null;
   }
 };
 
 export const getCurrentUserIdFromToken = (): string | null => {
   const payload = getTokenPayload();
-  return payload?.sub || payload?.nameid || null;
+  const userId = payload?.sub || payload?.nameid || null;
+  console.log(
+    "[AUTH] getCurrentUserIdFromToken:",
+    userId,
+    "from payload:",
+    payload,
+  );
+  return userId;
 };
 
 export const getRolesFromToken = (): string[] => {

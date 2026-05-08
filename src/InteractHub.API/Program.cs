@@ -14,7 +14,9 @@ JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
 
 var builder = WebApplication.CreateBuilder(args);
-
+// DEBUG: xóa sau khi fix xong
+var debugKey = builder.Configuration["JwtSettings:SecretKey"];
+Console.WriteLine($"TOKEN_LOG: SecretKey length={debugKey?.Length ?? 0}, value='{debugKey}'");
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReact",

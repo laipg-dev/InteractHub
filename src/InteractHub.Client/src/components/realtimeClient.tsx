@@ -9,14 +9,11 @@ let connection: HubConnection | null = null;
 let startPromise: Promise<HubConnection> | null = null;
 
 const resolveHubUrl = () => {
-  const configuredBase =
+  const base =
     (import.meta as ImportMeta & { env?: Record<string, string> }).env
-      ?.VITE_REALTIME_BASE_URL ||
-    (import.meta as ImportMeta & { env?: Record<string, string> }).env
-      ?.VITE_API_BASE_URL ||
-    "http://localhost:5207";
+      ?.VITE_REALTIME_BASE_URL || window.location.origin; // 🔥 dùng origin, không dùng API base
 
-  return `${configuredBase.replace(/\/$/, "")}/hubs/realtime`;
+  return `${base.replace(/\/$/, "")}/hubs/realtime`;
 };
 
 const createConnection = () => {

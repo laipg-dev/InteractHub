@@ -33,7 +33,7 @@ public class JwtService : IJwtService
         claims.Add(new Claim("role", role));
     }
     var key = new SymmetricSecurityKey(
-        Encoding.UTF8.GetBytes("InteractHubSuperSecretKey2026!!@@##"!));
+        Encoding.UTF8.GetBytes(_config["JwtSettings:SecretKey"]!));
 
     var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 

@@ -9,9 +9,14 @@ let connection: HubConnection | null = null;
 let startPromise: Promise<HubConnection> | null = null;
 
 const resolveHubUrl = () => {
-  const base =
-    (import.meta as ImportMeta & { env?: Record<string, string> }).env
-      ?.VITE_REALTIME_BASE_URL || window.location.origin; // 🔥 dùng origin, không dùng API base
+  const env = import.meta as ImportMeta & { env?: Record<string, string> };
+  const base = env?.env?.VITE_REALTIME_BASE_URL || env?.env?.VITE_API_BASE_URL;
+
+  if (!base) {
+    throw new Error(
+      "VITE_REALTIME_BASE_URL or VITE_API_BASE_URL must be defined for SignalR.",
+    );
+  }
 
   return `${base.replace(/\/$/, "")}/hubs/realtime`;
 };

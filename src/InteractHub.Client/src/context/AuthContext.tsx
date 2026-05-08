@@ -1,6 +1,13 @@
 // AuthContext.tsx — race-condition-free auth context
-// Design: setAccessToken() already dispatches auth-changed.
-// login() must NOT call notifyAuthChanged again.
+// Giữ nguyên kiến trúc event-based của bạn, thêm isInitializing.
+//
+// isInitializing: true trong lần render đầu tiên trước khi useEffect chạy.
+// RequireAuth dùng flag này để không redirect vội khi trang vừa load.
+//
+// Tại sao kiến trúc này không có race condition?
+//   setAccessToken() → localStorage.setItem() SYNC → interceptor đọc được ngay
+//   _dispatchAuthChanged() → event → React re-render (async, chỉ để update UI)
+// Hai việc này độc lập nhau — interceptor không cần đợi React re-render.
 
 import React, {
   createContext,
@@ -26,6 +33,8 @@ type AuthState = {
   isAuthenticated: boolean;
   currentUserId: string | null;
   isAdmin: boolean;
+  /** true trong lần render đầu, trước khi useEffect sync xong */
+  isInitializing: boolean;
 };
 
 type AuthContextValue = AuthState & {
@@ -35,7 +44,7 @@ type AuthContextValue = AuthState & {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const readAuthState = (): AuthState => ({
+const readAuthState = (): Omit<AuthState, "isInitializing"> => ({
   token: getAccessToken(),
   isAuthenticated: isAuthenticated(),
   currentUserId: getCurrentUserIdFromToken(),
@@ -49,24 +58,31 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [authState, setAuthState] = useState<AuthState>(readAuthState);
+  const [authState, setAuthState] = useState<AuthState>({
+    ...readAuthState(),
+    isInitializing: true, // chưa chạy useEffect lần đầu
+  });
 
-  // Re-sync state whenever auth-changed fires.
-  // setAccessToken and clearAccessToken are the only dispatchers — no double-fire.
   useEffect(() => {
-    const sync = () => setAuthState(readAuthState());
+    // Lần đầu: sync state và tắt isInitializing
+    setAuthState({ ...readAuthState(), isInitializing: false });
+
+    // Lắng nghe auth-changed từ setAccessToken / clearAccessToken
+    const sync = () =>
+      setAuthState({ ...readAuthState(), isInitializing: false });
+
     window.addEventListener("auth-changed", sync);
     return () => window.removeEventListener("auth-changed", sync);
   }, []);
 
+  // login() gọi setAccessToken() → localStorage SYNC → dispatch auth-changed
+  // KHÔNG gọi thêm gì — setAccessToken đã là authoritative dispatch point
   const login = useCallback((token: string) => {
-    // setAccessToken saves to localStorage AND dispatches auth-changed once.
-    // Do NOT call notifyAuthChanged / dispatchEvent here again.
     setAccessToken(token);
   }, []);
 
+  // logout() tương tự
   const logout = useCallback(() => {
-    // Same: clearAccessToken dispatches auth-changed once internally.
     clearAccessToken();
   }, []);
 

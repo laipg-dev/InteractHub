@@ -9,8 +9,8 @@ let connection: HubConnection | null = null;
 let startPromise: Promise<HubConnection> | null = null;
 
 const resolveHubUrl = () => {
-  const env = import.meta as ImportMeta & { env?: Record<string, string> };
-  const base = env?.env?.VITE_REALTIME_BASE_URL || env?.env?.VITE_API_BASE_URL;
+  const base =
+    import.meta.env.VITE_REALTIME_BASE_URL || import.meta.env.VITE_API_BASE_URL;
 
   if (!base) {
     throw new Error(
@@ -20,7 +20,6 @@ const resolveHubUrl = () => {
 
   return `${base.replace(/\/$/, "")}/hubs/realtime`;
 };
-
 const createConnection = () => {
   return new HubConnectionBuilder()
     .withUrl(resolveHubUrl(), {

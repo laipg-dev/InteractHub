@@ -14,6 +14,8 @@ public class UserProfileDto
     public string? Bio { get; set; }
     public string? AvatarUrl { get; set; } // Link ảnh đại diện
     public DateTime JoinedAt { get; set; }
+
+    public int FriendCount { get; set; }
     public int PostCount { get; set; }
     
     public List<PostResponseDto> Posts { get; set; } = new();

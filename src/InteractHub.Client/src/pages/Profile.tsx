@@ -83,9 +83,8 @@ const Profile = () => {
     if (!userId) return;
 
     try {
-      const [profileRes, friendRes, postRes] = await Promise.all([
+      const [profileRes, postRes] = await Promise.all([
         api.get(`/users/profile/${userId}`),
-        api.get("/Friends/list-and-requests"),
         api.get(`/Posts/userPosts/${userId}`),
       ]);
 
@@ -151,7 +150,7 @@ const Profile = () => {
           (base.joinedAt as string | undefined) ||
           (base.JoinedAt as string | undefined) ||
           (base.createdAt as string | undefined),
-        friendCount: friendRes.data?.friends?.length ?? 0,
+        friendCount: profileRes.data?.friendCount ?? 0,
         postCount: posts.length,
         posts,
       });

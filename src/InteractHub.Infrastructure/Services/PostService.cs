@@ -426,7 +426,9 @@ public class PostService : IPostService
                 Hashtags = p.Hashtags.Select(h => h.Name).ToList()
             })
             .ToListAsync();
-
+        var friendCount = await _context.Friendships
+            .CountAsync(f => (f.UserId == userId || f.FriendId == userId) && f.IsAccepted);
+       
         var status = await _friendService.GetFriendStatusAsync(currentUserId, userId);
         return new UserProfileDto {
             Id = user.Id,
@@ -438,6 +440,7 @@ public class PostService : IPostService
             AvatarUrl = user.AvatarUrl,
             FriendStatus = status,
             JoinedAt = DateTime.Now,
+            FriendCount = friendCount,
             PostCount = posts.Count,
             Posts = posts
         };

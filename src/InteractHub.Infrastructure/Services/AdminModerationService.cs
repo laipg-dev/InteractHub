@@ -1,4 +1,4 @@
-using InteractHub.Core.DTOs;
+ using InteractHub.Core.DTOs;
 using InteractHub.Core.Entities;
 using InteractHub.Core.Interfaces;
 using InteractHub.Infrastructure.Data;
@@ -9,76 +9,97 @@ namespace InteractHub.Infrastructure.Services;
 public class AdminModerationService : IAdminModerationService
 {
     private readonly ApplicationDbContext _context;
-    private readonly IAdminReportService _adminReportService;
     private readonly INotificationService _notificationService;
 
     public AdminModerationService(
         ApplicationDbContext context,
-        IAdminReportService adminReportService,
         INotificationService notificationService)
     {
         _context = context;
-        _adminReportService = adminReportService;
         _notificationService = notificationService;
     }
 
     public async Task<bool> ReviewPostReportAsync(int reportId, ReviewPostReportRequest request, string adminUserId)
     {
         var report = await _context.PostReports
-            .Include(r => r.Post)
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(r => r.Id == reportId);
 
         if (report == null) return false;
 
+        var post = await _context.Posts
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Id == report.PostId);
+
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            await _adminReportService.UpdateReportStatusAsync(
-                reportId,
-                new UpdatePostReportStatusRequest
-                {
-                    Status = request.ReportStatus,
-                    FinalStatus = request.FinalStatus,
-                    Note = request.AdminNote
-                });
+            var now = DateTime.UtcNow;
 
             // Ghi thêm metadata review vào report cụ thể.
             report.HandlerId = adminUserId;
             report.ActionTaken = request.Decision.ToString();
-            report.ReviewedAt = DateTime.UtcNow;
-            report.UpdatedAt = DateTime.UtcNow;
+            if (!Enum.TryParse<ReportStatus>(request.ReportStatus, true, out var requestedReportStatus))
+            {
+                throw new Exception("Trạng thái report không hợp lệ.");
+            }
+
+            // Direction A:
+            // - FinalStatus chỉ là kết luận cuối: Safe / Violating / Removed
+            // - Review sẽ chốt report về Resolved, trừ khi admin cố ý Reject report (chỉ hợp lệ khi Decision=Safe)
+            var resolvedReportStatus = requestedReportStatus == ReportStatus.Rejected
+                ? ReportStatus.Rejected
+                : ReportStatus.Resolved;
+
+            if (resolvedReportStatus == ReportStatus.Rejected && request.Decision != AdminModerationDecision.Safe)
+            {
+                throw new Exception("ReportStatus=Rejected chỉ hợp lệ khi Decision=Safe.");
+            }
+
+            report.Status = resolvedReportStatus;
+            report.ReviewedAt = now;
+            report.UpdatedAt = now;
             report.ReviewNote = request.AdminNote;
 
-            var summary = await _context.PostReportSummaries.FirstOrDefaultAsync(s => s.PostId == report.PostId);
-            if (summary != null)
+            var finalStatus = request.Decision switch
             {
-                summary.LastReviewedAt = DateTime.UtcNow;
-                summary.LastReviewedByAdminId = adminUserId;
-                summary.ReportsSinceLastReview = 0;
-                summary.LastReviewDecision = request.Decision.ToString();
-                summary.ReviewerNote = request.AdminNote;
+                AdminModerationDecision.Safe => ContentFlag.Safe,
+                AdminModerationDecision.RemovePost => ContentFlag.Removed,
+                AdminModerationDecision.DisablePostOwner => ContentFlag.Violating,
+                _ => ContentFlag.UnderReview
+            };
 
-                if (!string.IsNullOrWhiteSpace(request.FinalStatus) && Enum.TryParse<ContentFlag>(request.FinalStatus, true, out var parsedFlag))
+            var summary = await _context.PostReportSummaries
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(s => s.PostId == report.PostId);
+            if (summary == null)
+            {
+                summary = new PostReportSummary
                 {
-                    summary.FinalStatus = parsedFlag;
-                    summary.Flag = parsedFlag;
-                }
-                else
-                {
-                    summary.Flag = request.Decision switch
-                    {
-                        AdminModerationDecision.Safe => ContentFlag.Safe,
-                        AdminModerationDecision.RemovePost => ContentFlag.Removed,
-                        AdminModerationDecision.DisablePostOwner => ContentFlag.Violating,
-                        _ => summary.Flag
-                    };
-                    summary.FinalStatus = summary.Flag;
-                }
+                    PostId = report.PostId,
+                    TotalReports = 1,
+                    ReportsSinceLastReview = 0,
+                    Flag = ContentFlag.UnderReview,
+                    FinalStatus = ContentFlag.UnderReview
+                };
+                _context.PostReportSummaries.Add(summary);
             }
+
+            summary.LastReviewedAt = now;
+            summary.LastReviewedByAdminId = adminUserId;
+            summary.ReportsSinceLastReview = 0;
+            summary.LastReviewDecision = request.Decision.ToString();
+            summary.ReviewerNote = request.AdminNote;
+            summary.FinalStatus = finalStatus;
+            summary.Flag = finalStatus;
 
             switch (request.Decision)
             {
                 case AdminModerationDecision.Safe:
+                    if (post != null)
+                    {
+                        await PostVisibilityHelper.SetPostRemovedStateAsync(_context, post.Id, removed: false);
+                    }
                     report.ResolutionMessage = $"Báo cáo cho bài viết #{report.PostId} đã được xem xét và nội dung hiện không vi phạm.";
                     break;
 
@@ -88,7 +109,12 @@ public class AdminModerationService : IAdminModerationService
                     break;
 
                 case AdminModerationDecision.DisablePostOwner:
-                    await DeactivateUserInternalAsync(report.Post.UserId);
+                    if (post == null)
+                    {
+                        throw new Exception("Không thể xử lý vì bài viết không tồn tại hoặc không thể truy cập.");
+                    }
+
+                    await DeactivateUserInternalAsync(post.UserId);
                     report.ResolutionMessage = $"Báo cáo cho bài viết #{report.PostId} đã được xử lý. Tài khoản đăng nội dung đã bị hạn chế.";
                     break;
             }
@@ -123,8 +149,13 @@ public class AdminModerationService : IAdminModerationService
 
                 if (!string.IsNullOrWhiteSpace(ownerMessage))
                 {
+                    if (post == null)
+                    {
+                        throw new Exception("Không thể gửi thông báo vì bài viết không tồn tại hoặc không thể truy cập.");
+                    }
+
                     await _notificationService.CreateNotificationAsync(
-                        report.Post.UserId,
+                        post.UserId,
                         adminUserId,
                         ownerNotificationType,
                         message: ownerMessage,

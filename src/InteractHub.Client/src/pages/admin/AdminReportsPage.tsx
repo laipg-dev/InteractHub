@@ -39,6 +39,11 @@ const AdminReportsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [allReports, setAllReports] = useState<AdminReportListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showManualReport, setShowManualReport] = useState(false);
+  const [manualPostId, setManualPostId] = useState("");
+  const [manualReason, setManualReason] = useState("");
+  const [manualAdminNote, setManualAdminNote] = useState("");
+  const [creatingManualReport, setCreatingManualReport] = useState(false);
 
   const activeStatus = searchParams.get("status") || "all";
   const search = searchParams.get("q") || "";
@@ -84,6 +89,39 @@ const AdminReportsPage = () => {
   useEffect(() => {
     void fetchReports();
   }, [fetchReports]);
+
+  type CreateManualReportResponse = { reportId: number };
+
+  const handleCreateManualReport = async () => {
+    const postId = Number(manualPostId || 0);
+    const reason = manualReason.trim();
+
+    if (!postId || postId <= 0) return;
+    if (!reason) return;
+
+    try {
+      setCreatingManualReport(true);
+      const response = await api.post<CreateManualReportResponse>(
+        "/admin/reports/manual",
+        {
+          postId,
+          reason,
+          adminNote: manualAdminNote.trim() || undefined,
+        },
+      );
+      const createdId = response.data?.reportId;
+      setShowManualReport(false);
+      setManualPostId("");
+      setManualReason("");
+      setManualAdminNote("");
+      if (createdId) navigate(`/admin/reports/${createdId}`);
+      else void fetchReports();
+    } catch (error) {
+      console.error("Lỗi tạo report thủ công:", error);
+    } finally {
+      setCreatingManualReport(false);
+    }
+  };
 
   useEffect(() => {
     let unsubscribeNew: (() => void) | undefined;
@@ -135,6 +173,54 @@ const AdminReportsPage = () => {
       </div>
 
       <div className="mb-6 rounded-[28px] border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <p className="text-sm font-bold text-slate-700">
+            Tạo report thủ công
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowManualReport((prev) => !prev)}
+            className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-bold text-white"
+          >
+            {showManualReport ? "Đóng" : "Mở"}
+          </button>
+        </div>
+
+        {showManualReport ? (
+          <div className="mb-4 grid gap-3 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_160px]">
+            <input
+              value={manualPostId}
+              onChange={(e) => setManualPostId(e.target.value)}
+              placeholder="PostId"
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              value={manualReason}
+              onChange={(e) => setManualReason(e.target.value)}
+              placeholder="Lý do vi phạm"
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              value={manualAdminNote}
+              onChange={(e) => setManualAdminNote(e.target.value)}
+              placeholder="Ghi chú admin (tuỳ chọn)"
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              type="button"
+              disabled={
+                creatingManualReport ||
+                Number(manualPostId || 0) <= 0 ||
+                !manualReason.trim()
+              }
+              onClick={() => void handleCreateManualReport()}
+              className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+            >
+              {creatingManualReport ? "Đang tạo..." : "Tạo"}
+            </button>
+          </div>
+        ) : null}
+
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px_180px_120px_120px]">
           <div className="relative">
             <Search

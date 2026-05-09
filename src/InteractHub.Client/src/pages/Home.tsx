@@ -104,7 +104,7 @@ const Home = () => {
       setOpenUploadModal(false);
       setSelectedStoryFile(null);
       void fetchStories();
-      alert("Đăng Story thành công rồi Tuấn nhé!");
+      alert("Đăng Story thành công");
     } catch (error) {
       console.error(error);
       alert("Đăng story thất bại.");
@@ -125,7 +125,7 @@ const Home = () => {
       setFriendRequests(requests);
       setUserData(mappedUser);
     } catch (error) {
-      console.error("Duy ơi, lỗi load Sidebar rồi:", error);
+      console.error("Lỗi load Sidebar rồi:", error);
     }
   };
 
@@ -569,6 +569,9 @@ const Home = () => {
           initialUserIndex={stories.findIndex(
             (g) => g.userId === selectedStoryGroup.userId,
           )}
+          onStoryDeleted={() => {
+            void fetchStories();
+          }}
           onClose={() => setSelectedStoryGroup(null)}
         />
       )}

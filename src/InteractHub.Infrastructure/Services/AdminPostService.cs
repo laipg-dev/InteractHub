@@ -364,8 +364,10 @@ public class AdminPostService : IAdminPostService
 
         if (post == null) return false;
 
+        var now = DateTime.UtcNow;
+
         post.IsDeleted = removed;
-        post.DeletedAt = removed ? DateTime.UtcNow : null;
+        post.DeletedAt = removed ? now : null;
 
         var comments = await _context.Comments
             .IgnoreQueryFilters()
@@ -374,7 +376,7 @@ public class AdminPostService : IAdminPostService
         foreach (var comment in comments)
         {
             comment.IsDeleted = removed;
-            comment.DeletedAt = removed ? DateTime.UtcNow : null;
+            comment.DeletedAt = removed ? now : null;
         }
 
         var likes = await _context.Likes
@@ -384,7 +386,55 @@ public class AdminPostService : IAdminPostService
         foreach (var like in likes)
         {
             like.IsDeleted = removed;
-            like.DeletedAt = removed ? DateTime.UtcNow : null;
+            like.DeletedAt = removed ? now : null;
+        }
+
+        // Đồng bộ 2 chiều report <-> post (Direction A: FinalStatus là kết luận cuối).
+        var finalStatus = removed ? ContentFlag.Removed : ContentFlag.Safe;
+
+        var summary = await _context.PostReportSummaries
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(s => s.PostId == postId);
+        if (summary == null)
+        {
+            summary = new PostReportSummary
+            {
+                PostId = postId,
+                TotalReports = 0,
+                ReportsSinceLastReview = 0,
+                Flag = ContentFlag.UnderReview,
+                FinalStatus = ContentFlag.UnderReview
+            };
+            _context.PostReportSummaries.Add(summary);
+        }
+
+        summary.LastReviewedAt = now;
+        summary.LastReviewedByAdminId = adminUserId;
+        summary.ReportsSinceLastReview = 0;
+        summary.LastReviewDecision = removed
+            ? AdminModerationDecision.RemovePost.ToString()
+            : AdminModerationDecision.Safe.ToString();
+        summary.ReviewerNote = removed
+            ? "Removed via Post Management"
+            : "Restored via Post Management";
+        summary.FinalStatus = finalStatus;
+        summary.Flag = finalStatus;
+
+        var reports = await _context.PostReports
+            .IgnoreQueryFilters()
+            .Where(r => r.PostId == postId)
+            .ToListAsync();
+
+        foreach (var report in reports)
+        {
+            report.Status = ReportStatus.Resolved;
+            report.UpdatedAt = now;
+            report.HandlerId = adminUserId;
+            report.ReviewedAt = report.ReviewedAt ?? now;
+            report.ActionTaken = removed
+                ? AdminModerationDecision.RemovePost.ToString()
+                : AdminModerationDecision.Safe.ToString();
+            report.ReviewNote ??= summary.ReviewerNote;
         }
 
         await _context.SaveChangesAsync();

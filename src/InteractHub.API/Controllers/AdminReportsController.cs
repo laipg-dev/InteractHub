@@ -2,6 +2,7 @@ using InteractHub.Core.DTOs;
 using InteractHub.Core.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace InteractHub.API.Controllers;
 
@@ -56,5 +57,18 @@ public class AdminReportsController : ControllerBase
             return NotFound("Không tìm thấy report để cập nhật.");
 
         return Ok(new { message = "Cập nhật trạng thái report thành công." });
+    }
+
+    [HttpPost("manual")]
+    public async Task<IActionResult> CreateManualReport([FromBody] CreateManualPostReportRequest request)
+    {
+        var adminUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(adminUserId))
+        {
+            return Unauthorized();
+        }
+
+        var reportId = await _adminReportService.CreateManualReportAsync(request, adminUserId);
+        return Ok(new { reportId });
     }
 }

@@ -42,6 +42,9 @@ const AdminPostDetailPanel = ({ selectedPost, onPostChanged }: Props) => {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ content: "", imageUrl: "" });
   const [message, setMessage] = useState<string | null>(null);
+  const [manualReportReason, setManualReportReason] = useState("");
+  const [manualReportNote, setManualReportNote] = useState("");
+  const [creatingManualReport, setCreatingManualReport] = useState(false);
 
   const postId = selectedPost?.id ?? null;
 
@@ -186,6 +189,50 @@ const AdminPostDetailPanel = ({ selectedPost, onPostChanged }: Props) => {
     }
   };
 
+  type CreateManualReportResponse = { reportId: number };
+
+  const handleCreateManualReport = async () => {
+    if (!detail || creatingManualReport) return;
+
+    const reason = manualReportReason.trim();
+    if (!reason) {
+      setMessage("Vui lòng nhập lý do report.");
+      return;
+    }
+
+    try {
+      setCreatingManualReport(true);
+      setMessage(null);
+
+      const payload = {
+        postId: detail.id,
+        reason,
+        adminNote: manualReportNote.trim() || undefined,
+      };
+
+      const response = await api.post<CreateManualReportResponse>(
+        "/admin/reports/manual",
+        payload,
+      );
+
+      const createdId = response.data?.reportId;
+      setMessage(
+        createdId ? `Đã tạo report thủ công #${createdId}.` : "Đã tạo report thủ công.",
+      );
+
+      setManualReportReason("");
+      setManualReportNote("");
+      await loadDetail();
+      onPostChanged();
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Không thể tạo report thủ công.",
+      );
+    } finally {
+      setCreatingManualReport(false);
+    }
+  };
+
   const handleToggleCommentState = async (
     commentId: number,
     removed: boolean,
@@ -292,6 +339,41 @@ const AdminPostDetailPanel = ({ selectedPost, onPostChanged }: Props) => {
                 {detail.reportCount} report
               </div>
             </div>
+          </section>
+
+          <section className="space-y-4 rounded-[24px] border border-slate-200 p-5">
+            <div>
+              <h4 className="text-sm font-black uppercase tracking-[0.18em] text-slate-400">
+                Tạo report thủ công
+              </h4>
+              <p className="mt-1 text-sm text-slate-500">
+                Dùng khi phát hiện bài viết vi phạm nhưng chưa có user report.
+              </p>
+            </div>
+
+            <input
+              value={manualReportReason}
+              onChange={(e) => setManualReportReason(e.target.value)}
+              placeholder="Lý do vi phạm (vd: spam, phản cảm, tin giả...)"
+              className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
+            />
+
+            <textarea
+              value={manualReportNote}
+              onChange={(e) => setManualReportNote(e.target.value)}
+              rows={3}
+              placeholder="Ghi chú nội bộ của admin (tuỳ chọn)"
+              className="w-full rounded-3xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
+            />
+
+            <button
+              type="button"
+              disabled={saving || creatingManualReport}
+              onClick={() => void handleCreateManualReport()}
+              className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+            >
+              {creatingManualReport ? "Đang tạo..." : "Tạo report"}
+            </button>
           </section>
 
           <section className="space-y-4">

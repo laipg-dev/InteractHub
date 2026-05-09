@@ -34,8 +34,7 @@ const AdminReportDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [decision, setDecision] = useState<ModerationDecision>("Safe");
-  const [reportStatus, setReportStatus] = useState("Reviewed");
-  const [finalStatus, setFinalStatus] = useState("Safe");
+  const [reportStatus, setReportStatus] = useState("Resolved");
   const [adminNote, setAdminNote] = useState("");
   const [notifyReporter, setNotifyReporter] = useState(true);
   const [notifyContentOwner, setNotifyContentOwner] = useState(false);
@@ -62,20 +61,19 @@ const AdminReportDetailPage = () => {
 
   useEffect(() => {
     if (decision === "Safe") {
-      setFinalStatus("Safe");
       setNotifyContentOwner(false);
       return;
     }
 
     if (decision === "RemovePost") {
-      setFinalStatus("Removed");
       setNotifyContentOwner(true);
+      setReportStatus("Resolved");
       return;
     }
 
     if (decision === "DisablePostOwner") {
-      setFinalStatus("Violating");
       setNotifyContentOwner(true);
+      setReportStatus("Resolved");
     }
   }, [decision]);
 
@@ -97,7 +95,6 @@ const AdminReportDetailPage = () => {
       await api.put(`/admin/moderation/reports/${report.reportId}/review`, {
         decision,
         reportStatus,
-        finalStatus,
         adminNote,
         notifyReporter,
         notifyContentOwner,
@@ -267,11 +264,13 @@ const AdminReportDetailPage = () => {
               <select
                 value={reportStatus}
                 onChange={(e) => setReportStatus(e.target.value)}
+                disabled={decision !== "Safe"}
                 className="w-full rounded-2xl border border-gray-200 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="Reviewed">Reviewed</option>
                 <option value="Resolved">Resolved</option>
-                <option value="Rejected">Rejected</option>
+                {decision === "Safe" ? (
+                  <option value="Rejected">Rejected</option>
+                ) : null}
               </select>
             </div>
 
@@ -279,17 +278,13 @@ const AdminReportDetailPage = () => {
               <label className="mb-2 block text-sm font-semibold text-slate-700">
                 Final Status
               </label>
-              <select
-                value={finalStatus}
-                onChange={(e) => setFinalStatus(e.target.value)}
-                className="w-full rounded-2xl border border-gray-200 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="Safe">Safe</option>
-                <option value="UnderReview">UnderReview</option>
-                <option value="Dangerous">Dangerous</option>
-                <option value="Violating">Violating</option>
-                <option value="Removed">Removed</option>
-              </select>
+              <div className="w-full rounded-2xl border border-gray-200 bg-slate-50 p-3 text-sm font-bold text-slate-700">
+                {decision === "Safe"
+                  ? "Safe"
+                  : decision === "RemovePost"
+                    ? "Removed"
+                    : "Violating"}
+              </div>
             </div>
 
             <div>

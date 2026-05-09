@@ -194,19 +194,144 @@ public class AdminReportService : IAdminReportService
         if (!Enum.TryParse<ReportStatus>(request.Status, true, out var parsedStatus))
             throw new Exception("Trạng thái report không hợp lệ.");
 
+        var now = DateTime.UtcNow;
         report.Status = parsedStatus;
-        report.UpdatedAt = DateTime.UtcNow;
+        report.UpdatedAt = now;
 
-        var summary = await _context.PostReportSummaries
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(s => s.PostId == report.PostId);
-        if (summary != null && !string.IsNullOrWhiteSpace(request.FinalStatus) && Enum.TryParse<ContentFlag>(request.FinalStatus, true, out var parsedFlag))
+        if (!string.IsNullOrWhiteSpace(request.FinalStatus))
         {
+            if (!Enum.TryParse<ContentFlag>(request.FinalStatus, true, out var parsedFlag))
+            {
+                throw new Exception("FinalStatus không hợp lệ.");
+            }
+
+            if (parsedFlag is not (ContentFlag.Safe or ContentFlag.Violating or ContentFlag.Removed))
+            {
+                throw new Exception("FinalStatus chỉ cho phép: Safe / Violating / Removed.");
+            }
+
+            var summary = await _context.PostReportSummaries
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(s => s.PostId == report.PostId);
+            if (summary == null)
+            {
+                summary = new PostReportSummary
+                {
+                    PostId = report.PostId,
+                    TotalReports = 1,
+                    ReportsSinceLastReview = 0,
+                    Flag = ContentFlag.UnderReview,
+                    FinalStatus = ContentFlag.UnderReview
+                };
+                _context.PostReportSummaries.Add(summary);
+            }
+
             summary.FinalStatus = parsedFlag;
             summary.Flag = parsedFlag;
+
+            await PostVisibilityHelper.SetPostRemovedStateAsync(
+                _context,
+                report.PostId,
+                removed: parsedFlag != ContentFlag.Safe);
         }
 
         await _context.SaveChangesAsync();
         return true;
+    }
+
+    public async Task<int> CreateManualReportAsync(CreateManualPostReportRequest request, string adminUserId)
+    {
+        if (request.PostId <= 0)
+        {
+            throw new Exception("PostId không hợp lệ.");
+        }
+
+        var reason = request.Reason?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new Exception("Lý do report không được để trống.");
+        }
+
+        var postExists = await _context.Posts
+            .IgnoreQueryFilters()
+            .AnyAsync(p => p.Id == request.PostId);
+        if (!postExists)
+        {
+            throw new Exception("Bài viết không tồn tại hoặc không thể truy cập.");
+        }
+
+        var alreadyPending = await _context.PostReports
+            .IgnoreQueryFilters()
+            .AnyAsync(r =>
+                r.PostId == request.PostId &&
+                r.ReporterId == adminUserId &&
+                r.Status == ReportStatus.Pending);
+        if (alreadyPending)
+        {
+            throw new Exception("Bạn đã tạo report cho bài viết này rồi (đang chờ xử lý).");
+        }
+
+        using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            var now = DateTime.UtcNow;
+
+            var report = new PostReport
+            {
+                PostId = request.PostId,
+                ReporterId = adminUserId,
+                Reason = reason,
+                Description = string.IsNullOrWhiteSpace(request.AdminNote) ? null : request.AdminNote.Trim(),
+                Status = ReportStatus.Pending,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+
+            _context.PostReports.Add(report);
+
+            var summary = await _context.PostReportSummaries
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(s => s.PostId == request.PostId);
+
+            if (summary == null)
+            {
+                summary = new PostReportSummary
+                {
+                    PostId = request.PostId,
+                    TotalReports = 0,
+                    Flag = ContentFlag.UnderReview,
+                    FinalStatus = ContentFlag.UnderReview,
+                    ReportsSinceLastReview = 0
+                };
+                _context.PostReportSummaries.Add(summary);
+            }
+
+            summary.TotalReports++;
+            summary.ReportsSinceLastReview++;
+
+            var reasonLower = reason.ToLower();
+            if (reasonLower.Contains("spam")) summary.SpamCount++;
+            else if (reasonLower.Contains("offensive") || reasonLower.Contains("phản cảm")) summary.OffensiveCount++;
+            else if (reasonLower.Contains("fake") || reasonLower.Contains("tin giả")) summary.FakeNewsCount++;
+            else summary.OtherCount++;
+
+            // Admin tạo report thủ công => ưu tiên đưa post vào queue kiểm duyệt.
+            summary.Flag = summary.Flag == ContentFlag.Safe ? ContentFlag.UnderReview : summary.Flag;
+            summary.LastEscalatedAt = now;
+
+            if (summary.TotalReports >= 10 && summary.Flag != ContentFlag.Violating)
+            {
+                summary.Flag = ContentFlag.Dangerous;
+            }
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return report.Id;
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 }

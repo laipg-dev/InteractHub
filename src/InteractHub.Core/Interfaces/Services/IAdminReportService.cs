@@ -13,4 +13,5 @@ public interface IAdminReportService
         string? sortDir = null);
     Task<AdminReportDetailDto?> GetReportByIdAsync(int reportId);
     Task<bool> UpdateReportStatusAsync(int reportId, UpdatePostReportStatusRequest request);
+    Task<int> CreateManualReportAsync(CreateManualPostReportRequest request, string adminUserId);
 }

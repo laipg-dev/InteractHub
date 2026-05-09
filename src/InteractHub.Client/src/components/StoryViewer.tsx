@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosConfig";
 import { jwtDecode } from "jwt-decode";
@@ -8,6 +8,7 @@ interface StoryViewerProps {
   stories: StoryGroup[];
   initialUserIndex: number;
   onClose: () => void;
+  onStoryDeleted?: () => void;
 }
 
 type JwtPayload = { sub?: string };
@@ -16,19 +17,44 @@ const StoryViewer = ({
   stories,
   initialUserIndex,
   onClose,
+  onStoryDeleted,
 }: StoryViewerProps) => {
   const navigate = useNavigate();
   const safeInitialIndex = initialUserIndex >= 0 ? initialUserIndex : 0;
-  const [currentUserIndex, setCurrentUserIndex] = useState(safeInitialIndex);
+  const normalizedStoryGroups = useMemo(
+    () => stories.filter((group) => (group.stories?.length || 0) > 0),
+    [stories],
+  );
+
+  const initialUserId = stories?.[safeInitialIndex]?.userId;
+  const resolvedInitialUserIndex = useMemo(() => {
+    if (!initialUserId) return 0;
+    const index = normalizedStoryGroups.findIndex(
+      (group) => group.userId === initialUserId,
+    );
+    return index >= 0 ? index : 0;
+  }, [initialUserId, normalizedStoryGroups]);
+
+  const [storyGroups, setStoryGroups] = useState<StoryGroup[]>(
+    normalizedStoryGroups,
+  );
+  const [currentUserIndex, setCurrentUserIndex] = useState(
+    resolvedInitialUserIndex,
+  );
   const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<number | null>(null);
 
   const token = localStorage.getItem("token");
   const decoded = token ? jwtDecode<JwtPayload>(token) : null;
   const currentUserIdLocal = decoded?.sub;
 
-  const currentUser = stories?.[currentUserIndex];
+  const currentUser = storyGroups?.[currentUserIndex];
   const currentStory = currentUser?.stories?.[currentStoryIndex];
   const isMyStory = currentUser?.userId === currentUserIdLocal;
   const displayName =
@@ -40,16 +66,17 @@ const StoryViewer = ({
   const currentUserId = currentUser?.userId;
   const currentStoryId = currentStory?.id;
 
-  const storyGroups = useMemo(
-    () => stories.filter((group) => (group.stories?.length || 0) > 0),
-    [stories],
-  );
+  useEffect(() => {
+    setStoryGroups(normalizedStoryGroups);
+  }, [normalizedStoryGroups]);
 
   useEffect(() => {
-    setCurrentUserIndex(safeInitialIndex);
+    setCurrentUserIndex(resolvedInitialUserIndex);
     setCurrentStoryIndex(0);
     setShowMenu(false);
-  }, [safeInitialIndex]);
+    setConfirmDeleteOpen(false);
+    setDeleteError(null);
+  }, [resolvedInitialUserIndex]);
 
   useEffect(() => {
     if (!storyGroups.length) {
@@ -88,14 +115,96 @@ const StoryViewer = ({
     }
   };
 
-  const handleDeleteStory = async () => {
-    if (!currentStory) return;
+  const showToast = useCallback((message: string) => {
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+    setToastMessage(message);
+    toastTimeoutRef.current = window.setTimeout(() => {
+      setToastMessage(null);
+      toastTimeoutRef.current = null;
+    }, 1500);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        window.clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const requestDeleteStory = () => {
+    setShowMenu(false);
+    setDeleteError(null);
+    setConfirmDeleteOpen(true);
+  };
+
+  const confirmDeleteStory = async () => {
+    if (!currentStory || !currentUserId) return;
+    setIsDeleting(true);
+    setDeleteError(null);
     try {
       await api.delete(`/stories/deleteStory/${currentStory.id}`);
+
+      const nextGroups = storyGroups
+        .map((group) => {
+          if (group.userId !== currentUserId) return group;
+          const remainingStories = group.stories.filter(
+            (s) => s.id !== currentStory.id,
+          );
+          return { ...group, stories: remainingStories };
+        })
+        .filter((group) => (group.stories?.length || 0) > 0);
+
+      setStoryGroups(nextGroups);
       setShowMenu(false);
-      onClose();
+      setProgress(0);
+      setConfirmDeleteOpen(false);
+
+      if (!nextGroups.length) {
+        onClose();
+        return;
+      }
+
+      const currentGroup = storyGroups[currentUserIndex];
+      const hasNextStoryInSameUser =
+        !!currentGroup && currentStoryIndex < currentGroup.stories.length - 1;
+      const nextUserId =
+        !hasNextStoryInSameUser && currentUserIndex < storyGroups.length - 1
+          ? storyGroups[currentUserIndex + 1]?.userId
+          : null;
+
+      if (hasNextStoryInSameUser) {
+        const sameUserIndex = nextGroups.findIndex(
+          (group) => group.userId === currentUserId,
+        );
+        const nextStoryIndex = currentStoryIndex;
+        setCurrentUserIndex(Math.max(0, sameUserIndex));
+        setCurrentStoryIndex(nextStoryIndex);
+      } else if (nextUserId) {
+        const nextUserIndex = nextGroups.findIndex(
+          (group) => group.userId === nextUserId,
+        );
+        if (nextUserIndex === -1) {
+          onClose();
+          return;
+        }
+        setCurrentUserIndex(nextUserIndex);
+        setCurrentStoryIndex(0);
+      } else {
+        onClose();
+        return;
+      }
+
+      showToast("Đã xóa story");
+      onStoryDeleted?.();
     } catch (error) {
       console.error("Xóa story thất bại", error);
+      setDeleteError("Xóa story thất bại. Thử lại nhé!");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -134,6 +243,7 @@ const StoryViewer = ({
 
   useEffect(() => {
     if (!currentUser || !currentStory) return;
+    if (confirmDeleteOpen || isDeleting) return;
     setProgress(0);
     const duration = 5000;
     const intervalMs = 50;
@@ -142,7 +252,14 @@ const StoryViewer = ({
       setProgress((prev) => Math.min(prev + step, 100));
     }, intervalMs);
     return () => clearInterval(interval);
-  }, [currentUserIndex, currentStoryIndex, currentUser, currentStory]);
+  }, [
+    currentUserIndex,
+    currentStoryIndex,
+    currentUser,
+    currentStory,
+    confirmDeleteOpen,
+    isDeleting,
+  ]);
 
   useEffect(() => {
     if (progress < 100) return;
@@ -267,7 +384,9 @@ const StoryViewer = ({
           {currentStory?.imageUrl && (
             <img
               src={currentStory.imageUrl}
-              className="h-full w-full object-contain"
+              className={`h-full w-full object-contain transition-opacity duration-200 ${
+                isDeleting ? "opacity-40" : "opacity-100"
+              }`}
               alt="Story content"
             />
           )}
@@ -316,7 +435,7 @@ const StoryViewer = ({
                   {showMenu && (
                     <div className="absolute right-0 mt-2 w-32 overflow-hidden rounded-xl bg-white shadow-lg">
                       <button
-                        onClick={handleDeleteStory}
+                        onClick={requestDeleteStory}
                         className="w-full px-4 py-3 text-left text-sm font-semibold text-red-600 transition hover:bg-gray-100"
                       >
                         Xóa
@@ -327,6 +446,12 @@ const StoryViewer = ({
               )}
             </div>
           </div>
+
+          {toastMessage && (
+            <div className="absolute bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-xs font-bold text-white backdrop-blur-sm">
+              {toastMessage}
+            </div>
+          )}
         </div>
 
         <button
@@ -336,6 +461,49 @@ const StoryViewer = ({
           ❯
         </button>
       </div>
+
+      {confirmDeleteOpen && (
+        <div className="fixed inset-0 z-[230] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="px-6 pt-6">
+              <h3 className="text-base font-black text-gray-900">
+                Xác nhận xóa
+              </h3>
+              <p className="mt-2 text-sm font-semibold text-gray-500">
+                Bạn chắc chắn muốn xóa story này không? Hành động này không thể
+                hoàn tác.
+              </p>
+              {deleteError && (
+                <p className="mt-3 text-sm font-black text-red-600">
+                  {deleteError}
+                </p>
+              )}
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3 bg-gray-50 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isDeleting) return;
+                  setConfirmDeleteOpen(false);
+                  setDeleteError(null);
+                }}
+                className="rounded-xl px-4 py-2 text-sm font-black text-gray-500 hover:text-gray-700"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteStory}
+                disabled={isDeleting}
+                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-black text-white shadow-lg shadow-red-100 transition hover:bg-red-700 disabled:opacity-60"
+              >
+                {isDeleting ? "Đang xóa..." : "Xóa"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
